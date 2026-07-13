@@ -46,7 +46,25 @@ class _PaymentCardScannerTabState extends State<PaymentCardScannerTab> {
     try {
       setState(() => _busy = true);
       final recognized = await _recognitionService.extractFromFile(file);
-      final parsed = PaymentCardParser.parse(recognized.rawText);
+      final attempts = recognized.allRawTexts
+          .map(PaymentCardParser.parse)
+          .toList(growable: false);
+      var parsed = attempts.firstWhere(
+        (attempt) => attempt.hasCardNumber && attempt.passesLuhnCheck,
+        orElse: () => attempts.firstWhere(
+          (attempt) => attempt.hasCardNumber,
+          orElse: () => attempts.first,
+        ),
+      );
+      if (!parsed.hasCardNumber && attempts.length > 1) {
+        final diagnosticText = <String>[];
+        for (var index = 0; index < attempts.length; index++) {
+          diagnosticText.add(
+            'OCR attempt ${index + 1}:\n${attempts[index].rawText}',
+          );
+        }
+        parsed = PaymentCardParser.parse(diagnosticText.join('\n\n'));
+      }
 
       if (!mounted) return;
       await Navigator.of(context).push(
@@ -85,8 +103,8 @@ class _PaymentCardScannerTabState extends State<PaymentCardScannerTab> {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Scan the front of a card. A result is accepted when a 16-digit '
-          'card number is detected.',
+          'Scan the front of a Visa, Mastercard, RuPay, or American Express '
+          'card. Supported card lengths are detected automatically.',
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
