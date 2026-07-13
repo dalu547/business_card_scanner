@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
@@ -29,12 +30,20 @@ class PaymentCardTextRecognitionService {
   );
 
   Future<RecognizedPaymentCardText> extractFromFile(File imageFile) async {
+    debugPrint('=== OCR Text Recognition Service Started ===');
+    debugPrint('Image file: ${imageFile.path}');
+
     final bytes = await imageFile.readAsBytes();
     final imageInfo = await _decodeImage(bytes);
     final recognizedText =
         await _textRecognizer.processImage(InputImage.fromFile(imageFile));
 
     final lines = _extractLines(recognizedText);
+    debugPrint('Extracted lines from initial OCR: ${lines.length}');
+    for (var i = 0; i < lines.length; i++) {
+      debugPrint('  Line $i: "${lines[i]}"');
+    }
+
     Rect? textBounds;
 
     for (final block in recognizedText.blocks) {
@@ -50,7 +59,17 @@ class PaymentCardTextRecognitionService {
       recognizedText: recognizedText,
     );
 
-    return RecognizedPaymentCardText(
+    debugPrint('Alternative raw texts (from enhanced crops): ${alternativeRawTexts.length}');
+    for (var i = 0; i < alternativeRawTexts.length; i++) {
+      debugPrint('  Alternative text $i:');
+      for (var line in alternativeRawTexts[i].split('\n')) {
+        if (line.trim().isNotEmpty) {
+          debugPrint('    "$line"');
+        }
+      }
+    }
+
+    final result = RecognizedPaymentCardText(
       rawText: lines.join('\n'),
       alternativeRawTexts: alternativeRawTexts,
       normalizedTextBounds: _normalizeRect(
@@ -59,6 +78,9 @@ class PaymentCardTextRecognitionService {
         imageInfo.height.toDouble(),
       ),
     );
+
+    debugPrint('=== OCR Text Recognition Service Completed ===');
+    return result;
   }
 
   List<String> _extractLines(RecognizedText recognizedText) {
@@ -76,29 +98,57 @@ class PaymentCardTextRecognitionService {
     required ui.Image sourceImage,
     required RecognizedText recognizedText,
   }) async {
-    TextLine? bestLine;
-    var bestDigitCount = 0;
+    debugPrint('_recognizeEnhancedNumberBand: Finding candidate lines with digits...');
 
+    final digitLines = <(TextLine, int)>[];
     for (final block in recognizedText.blocks) {
       for (final line in block.lines) {
         final digitCount = RegExp(r'\d').allMatches(line.text).length;
-        if (digitCount > bestDigitCount) {
-          bestLine = line;
-          bestDigitCount = digitCount;
+        if (digitCount >= 4) {
+          digitLines.add((line, digitCount));
         }
       }
     }
 
-    // A payment-card line should already expose a meaningful run of digits.
-    // Below this threshold, a crop is more likely to target an expiry date.
-    if (bestLine == null || bestDigitCount < 7) return const [];
+    // Sort by digit count descending
+    digitLines.sort((a, b) => b.$2.compareTo(a.$2));
+    debugPrint('Found ${digitLines.length} lines with 4+ digits');
+    for (final (line, count) in digitLines) {
+      debugPrint('  - $count digits: "${line.text}"');
+    }
 
+    if (digitLines.isEmpty) {
+      debugPrint('No lines with digits found, skipping enhanced crop');
+      return const [];
+    }
+
+    // Try top 3 candidates, not just the one with most digits
+    final results = <String>[];
+    for (final (line, digitCount) in digitLines.take(3)) {
+      debugPrint('Trying enhanced crop for line with $digitCount digits: "${line.text}"');
+      final bandResults = await _enhanceLineAndOCR(sourceImage, line);
+      results.addAll(bandResults);
+    }
+
+    return results;
+  }
+
+  Future<List<String>> _enhanceLineAndOCR(
+    ui.Image sourceImage,
+    TextLine line,
+  ) async {
     final band = _expandedNumberBand(
-      bestLine.boundingBox,
+      line.boundingBox,
       sourceImage.width.toDouble(),
       sourceImage.height.toDouble(),
     );
-    if (band == null) return const [];
+    if (band == null) {
+      debugPrint('  Failed to expand band for line');
+      return const [];
+    }
+
+    debugPrint('  Crop region: ${band.left.toStringAsFixed(1)}, ${band.top.toStringAsFixed(1)}, '
+        '${band.right.toStringAsFixed(1)}, ${band.bottom.toStringAsFixed(1)}');
 
     final results = <String>[];
     final generatedFiles = <File>[];
@@ -122,9 +172,16 @@ class PaymentCardTextRecognitionService {
         generatedFiles.add(file);
         await file.writeAsBytes(bytes.buffer.asUint8List(), flush: true);
 
+        debugPrint('  Processing enhanced crop ($suffix)...');
         final retried =
             await _textRecognizer.processImage(InputImage.fromFile(file));
         final rawText = _extractLines(retried).join('\n').trim();
+        debugPrint('  Enhanced OCR ($suffix) result:');
+        for (var textLine in rawText.split('\n')) {
+          if (textLine.trim().isNotEmpty) {
+            debugPrint('    "$textLine"');
+          }
+        }
         if (rawText.isNotEmpty && !results.contains(rawText)) {
           results.add(rawText);
         }

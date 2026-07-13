@@ -58,19 +58,32 @@ class PaymentCardParser {
   );
 
   static ParsedPaymentCardData parse(String rawText) {
-    final candidates = <_Candidate>[];
+    print('\n=== Card Number Parser Started ===');
+    print('Raw text to parse:\n$rawText\n');
 
-    for (final rawLine in rawText.split(RegExp(r'\r?\n'))) {
-      final correctedLine = _correctDigitHeavyOcrLine(rawLine);
-      final lineVariants = <String>[rawLine];
-      if (correctedLine != rawLine) lineVariants.add(correctedLine);
+    final candidates = <_Candidate>[];
+    final lines = rawText.split(RegExp(r'\r?\n'));
+    print('Found ${lines.length} lines to parse');
+
+    for (var lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      final rawLine = lines[lineIdx];
+      print('Line $lineIdx: "$rawLine"');
+
+      // Generate all possible correction variants for this line
+      final lineVariants = _generateCorrectionVariants(rawLine);
 
       for (final line in lineVariants) {
         for (final match in _candidatePattern.allMatches(line)) {
           final number = match.group(0)!.replaceAll(RegExp(r'\D'), '');
-          if (number.length < 12 || number.length > 19) continue;
+          print('  Found candidate: "$number" (${number.length} digits)');
+
+          if (number.length < 12 || number.length > 19) {
+            print('    ✗ Invalid length (need 12-19 digits)');
+            continue;
+          }
 
           final network = _detectNetwork(number, rawText);
+          print('    ✓ Network: ${network.label}, Luhn: ${passesLuhn(number) ? "PASS" : "FAIL"}');
           candidates.add(
             _Candidate(
               number: number,
@@ -82,13 +95,29 @@ class PaymentCardParser {
       }
     }
 
+    print('\nFound ${candidates.length} total candidates');
+
     _Candidate? selected;
     for (final candidate in candidates) {
-      if (isValidLength(candidate.number, candidate.network)) {
+      final isValidLen = isValidLength(candidate.number, candidate.network);
+      print('Checking candidate: ${candidate.number} (${candidate.network.label})');
+      print('  Length valid: $isValidLen');
+
+      if (isValidLen) {
         selected = candidate;
+        print('  ✓ SELECTED');
         break;
+      } else {
+        print('  ✗ Invalid length for ${candidate.network.label}');
       }
     }
+
+    if (selected == null) {
+      print('\n✗ No valid card number found');
+    } else {
+      print('\n✓ Card number extracted: ${selected.number}');
+    }
+    print('=== Card Number Parser Completed ===\n');
 
     return ParsedPaymentCardData(
       cardNumber: selected?.number ?? '',
@@ -134,18 +163,52 @@ class PaymentCardParser {
     final digitCount = RegExp(r'\d').allMatches(line).length;
     if (digitCount < 10) return line;
 
-    // Apply only high-confidence OCR corrections.
-    // 'O' → '0' and 'I/l' → '1' are very low-risk.
-    // We skip 'B' → '8' because 'b' can also be a misread '6',
-    // and we can't know which without Luhn validation.
-    var corrected = line
+    // Apply high-confidence OCR corrections.
+    // 'O' → '0' and 'I/l' → '1' are very safe.
+    return line
         .replaceAll(RegExp(r'[Oo]'), '0')
         .replaceAll(RegExp(r'[Il|]'), '1');
+  }
 
-    // Strip characters that aren't digits or recognized separators.
-    // OCR of card numbers often produces extra letters mixed with digits;
-    // on digit-heavy lines, these are almost certainly artifacts.
-    return corrected.replaceAll(RegExp(r'[a-zA-Z]'), '');
+  static List<String> _generateCorrectionVariants(String line) {
+    // For lines with ambiguous letters like 'b'/'B' that could be misread digits,
+    // generate multiple variants to try. We'll parse them all and keep valid ones.
+    final variants = <String>{line}; // Start with original
+
+    final digitCount = RegExp(r'\d').allMatches(line).length;
+    if (digitCount < 10) return variants.toList();
+
+    // Apply base corrections (safe substitutions)
+    var corrected = _correctDigitHeavyOcrLine(line);
+    variants.add(corrected);
+
+    // For lines containing 'b' or 'B' (ambiguous: could be 6, 8, or noise):
+    // Generate multiple interpretations
+    if (RegExp(r'[bB]').hasMatch(corrected)) {
+      // Variant 1: Remove 'b'/'B' (treat as noise/artifact)
+      variants.add(corrected.replaceAll(RegExp(r'[bB]'), ''));
+
+      // Variant 2: Convert 'b'/'B' to '6' (most common misread on cards)
+      variants.add(corrected.replaceAll(RegExp(r'[bB]'), '6'));
+
+      // Variant 3: Convert 'b'/'B' to '8' (embossed cards with 8 shaped like B)
+      variants.add(corrected.replaceAll(RegExp(r'[bB]'), '8'));
+    }
+
+    // For any remaining letters, remove them (these are likely OCR noise)
+    for (final variant in variants.toList()) {
+      final cleaned = variant.replaceAll(RegExp(r'[a-zA-Z]'), '');
+      if (cleaned != variant) {
+        variants.add(cleaned);
+      }
+    }
+
+    print('Generated ${variants.length} correction variants for: "$line"');
+    for (final v in variants) {
+      print('  - "$v"');
+    }
+
+    return variants.toList();
   }
 
   static PaymentCardNetwork _detectNetwork(String number, String rawText) {

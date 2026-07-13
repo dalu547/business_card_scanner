@@ -59,14 +59,17 @@ AMERICAN EXPRESS
       expect(result.hasCardNumber, isTrue);
     });
 
-    test('does not blindly correct B to 8 due to ambiguity with 6', () {
-      // 'B' or 'b' from OCR could be a misread 6, 8, or S.
-      // Without Luhn validation context, we can't know. So we remove it.
+    test('tries multiple B→digit conversions to find valid number', () {
+      // 'B' or 'b' from OCR could be 6, 8, or noise. We now try all variants:
+      // - Remove it: 4000 000 0000 0002 (15 digits - invalid)
+      // - B→6: 4000 6000 0000 0002 (16 digits - valid) ✓
+      // - B→8: 4000 8000 0000 0002 (16 digits - valid but fails Luhn)
       final result = PaymentCardParser.parse('Visa\n4000 B000 0000 0002');
 
-      // After removing 'B', this becomes a 15-digit number which is invalid for Visa
-      expect(result.cardNumber, isEmpty);
-      expect(result.hasCardNumber, isFalse);
+      // The parser tries all variants and picks the first valid one
+      expect(result.cardNumber, '4000600000000002');
+      expect(result.network, PaymentCardNetwork.visa);
+      expect(result.hasCardNumber, isTrue);
     });
 
     test('recognizes RuPay from brand text', () {
@@ -107,6 +110,56 @@ VISA
       // With the correct number in the text, it should be extracted
       expect(result.cardNumber, '4035622991252000');
       expect(result.network, PaymentCardNetwork.visa);
+      expect(result.hasCardNumber, isTrue);
+    });
+
+    test('extracts ICICI embossed number from clean OCR', () {
+      final result = PaymentCardParser.parse('''
+ICICI Bank
+Platinum
+4035 6229 9125 2000
+VALID FROM 08/22 VALID THRU 08/29
+KALLA DALAYYA
+VISA
+''');
+
+      expect(result.cardNumber, '4035622991252000');
+      expect(result.network, PaymentCardNetwork.visa);
+      expect(result.passesLuhnCheck, isTrue);
+      expect(result.hasCardNumber, isTrue);
+    });
+
+    test('extracts YES Bank number despite artistic background overlay', () {
+      final result = PaymentCardParser.parse('''
+YES Prosperity BUSINESS YES BANK
+5223 5800 0754 4720
+5223
+VALID MONTH/YEAR
+THRU 10/25
+KALLA DALAYYA COGENCY
+MASTERCARD
+''');
+
+      expect(result.cardNumber, '5223580007544720');
+      expect(result.network, PaymentCardNetwork.mastercard);
+      expect(result.passesLuhnCheck, isTrue);
+      expect(result.hasCardNumber, isTrue);
+    });
+
+    test('extracts IDFC number despite large logo overlay', () {
+      final result = PaymentCardParser.parse('''
+IDFC FIRST Bank
+INDIVIDUAL
+4011 3841 0362 8514
+DEBIT
+VALID THRU 02/29
+KILLA DALAYYA
+VISA Platinum
+''');
+
+      expect(result.cardNumber, '4011384103628514');
+      expect(result.network, PaymentCardNetwork.visa);
+      expect(result.passesLuhnCheck, isTrue);
       expect(result.hasCardNumber, isTrue);
     });
 

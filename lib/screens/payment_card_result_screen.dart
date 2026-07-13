@@ -100,6 +100,38 @@ class PaymentCardResultScreen extends StatelessWidget {
                   parsedData.rawText.isEmpty
                       ? 'No text detected'
                       : parsedData.rawText,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Copy the above text and paste it here when reporting issues.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('Debug Logs (check console)'),
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.blue),
+                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.blue.withValues(alpha: 0.05),
+                ),
+                child: const SelectableText(
+                  'Detailed logs have been printed to the console.\n\n'
+                  'Run: flutter logs\n'
+                  'Or check the Debug Console in your IDE.\n\n'
+                  'Look for:\n'
+                  '- "=== OCR Text Recognition Service Started ==="\n'
+                  '- "=== Card Number Parser Started ==="\n\n'
+                  'Copy the full console output and paste it here.',
+                  style: TextStyle(fontFamily: 'monospace', fontSize: 11),
                 ),
               ),
             ],
