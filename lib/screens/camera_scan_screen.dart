@@ -168,8 +168,8 @@ class _CameraScanScreenState extends State<CameraScanScreen> {
                               cardDetected
                                   ? 'Card detected in frame'
                                   : _detectedBounds == null
-                                  ? 'Align the card in frame'
-                                  : 'Move card into guide box',
+                                      ? 'Align the card in frame'
+                                      : 'Move card into guide box',
                               style: const TextStyle(color: Colors.white),
                             ),
                           ),
@@ -205,7 +205,8 @@ class _CameraScanScreenState extends State<CameraScanScreen> {
       return false;
     }
 
-    final overlapRatio = (intersection.width * intersection.height) / detectedArea;
+    final overlapRatio =
+        (intersection.width * intersection.height) / detectedArea;
     return overlapRatio >= 0.5;
   }
 }

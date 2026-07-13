@@ -8,6 +8,7 @@ import '../services/card_parser.dart';
 import '../services/text_recognition_service.dart';
 import 'camera_scan_screen.dart';
 import 'ocr_result_screen.dart';
+import 'payment_card_scanner_tab.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -83,83 +84,100 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final contacts = widget.contacts;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Business Card Scanner')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Card Scanner'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.badge_outlined), text: 'Business Card'),
+              Tab(icon: Icon(Icons.credit_card), text: 'Credit / Debit'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            Column(
               children: [
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _busy ? null : _scanFromCamera,
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text('Open Camera Scanner'),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _busy ? null : _scanFromCamera,
+                          icon: const Icon(Icons.camera_alt),
+                          label: const Text('Open Camera Scanner'),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _busy ? null : _pickFromGallery,
+                          icon: const Icon(Icons.photo_library),
+                          label: const Text('Import from Gallery'),
+                        ),
+                      ),
+                      if (_busy) ...[
+                        const SizedBox(height: 12),
+                        const LinearProgressIndicator(),
+                      ],
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _busy ? null : _pickFromGallery,
-                    icon: const Icon(Icons.photo_library),
-                    label: const Text('Import from Gallery'),
-                  ),
+                const Divider(height: 1),
+                Expanded(
+                  child: contacts.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text(
+                              'No contacts yet. Scan a business card to extract structured contact data.',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: contacts.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final contact = contacts[index];
+                            final subtitleParts = <String>[
+                              if (contact.designation.isNotEmpty ||
+                                  contact.company.isNotEmpty)
+                                '${contact.designation}${contact.designation.isNotEmpty && contact.company.isNotEmpty ? ' @ ' : ''}${contact.company}',
+                              if (contact.mobileNumber.isNotEmpty)
+                                contact.mobileNumber,
+                              if (contact.email.isNotEmpty) contact.email,
+                            ];
+
+                            return ListTile(
+                              leading: CircleAvatar(
+                                child: Text(
+                                  contact.name.isNotEmpty
+                                      ? contact.name.characters.first
+                                          .toUpperCase()
+                                      : '?',
+                                ),
+                              ),
+                              title: Text(contact.name.isEmpty
+                                  ? 'Unknown Name'
+                                  : contact.name),
+                              subtitle: Text(subtitleParts.join('\n')),
+                              isThreeLine: subtitleParts.length >= 2,
+                              onTap: () => _showContactDetail(contact),
+                            );
+                          },
+                        ),
                 ),
-                if (_busy) ...[
-                  const SizedBox(height: 12),
-                  const LinearProgressIndicator(),
-                ],
               ],
             ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: contacts.isEmpty
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'No contacts yet. Scan a business card to extract structured contact data.',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  )
-                : ListView.separated(
-                    itemCount: contacts.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final contact = contacts[index];
-                      final subtitleParts = <String>[
-                        if (contact.designation.isNotEmpty ||
-                            contact.company.isNotEmpty)
-                          '${contact.designation}${contact.designation.isNotEmpty && contact.company.isNotEmpty ? ' @ ' : ''}${contact.company}',
-                        if (contact.mobileNumber.isNotEmpty)
-                          contact.mobileNumber,
-                        if (contact.email.isNotEmpty) contact.email,
-                      ];
-
-                      return ListTile(
-                        leading: CircleAvatar(
-                          child: Text(
-                            contact.name.isNotEmpty
-                                ? contact.name.characters.first.toUpperCase()
-                                : '?',
-                          ),
-                        ),
-                        title: Text(contact.name.isEmpty
-                            ? 'Unknown Name'
-                            : contact.name),
-                        subtitle: Text(subtitleParts.join('\n')),
-                        isThreeLine: subtitleParts.length >= 2,
-                        onTap: () => _showContactDetail(contact),
-                      );
-                    },
-                  ),
-          ),
-        ],
+            const PaymentCardScannerTab(),
+          ],
+        ),
       ),
     );
   }
